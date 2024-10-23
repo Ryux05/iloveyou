@@ -5,7 +5,7 @@ const port = 8080;
 
 // Koneksi ke MongoDB
 const { MongoClient } = require("mongodb");
-const mongoUrl = "mongodb+srv://myuko:<db_password>@key.itkat.mongodb.net/key";
+const mongoUrl = "mongodb+srv://myuko:loveyou@key.itkat.mongodb.net/key";
 const client = new MongoClient(mongoUrl, { useNewUrlParser: true, useUnifiedTopology: true });
 let db;
 
