@@ -1,7 +1,7 @@
 const express = require("express");
 const { Sequelize, DataTypes } = require("sequelize");
 const rateLimit = require("express-rate-limit");
-const mkbas = require("./mkbas"); // Mengasumsikan mkbas adalah fungsi Anda untuk menangani permintaan
+const mkbas = require("./mkbas"); // Fungsi untuk menangani permintaan
 const app = express();
 const port = 8080;
 
@@ -11,12 +11,9 @@ const sequelize = new Sequelize({
     storage: process.env.DB_PATH || './data/database.sqlite' // Nama file untuk menyimpan database
 });
 
-
-
-
 // Definisikan model API Key menggunakan Sequelize
 const ApiKey = sequelize.define('ApiKey', {
-    key: { type: DataTypes.STRING, allowNull: false, unique: true }, // Pastikan key unik
+    key: { type: DataTypes.STRING, allowNull: false, unique: true },
     type: { type: DataTypes.ENUM('basic', 'pro'), allowNull: false },
     requestCount: { type: DataTypes.INTEGER, defaultValue: 0 },
 });
@@ -27,21 +24,21 @@ sequelize.sync()
     .catch(err => console.error("SQLite connection error:", err));
 
 // Atur trust proxy
-app.set('trust proxy', true);
+app.set('trust proxy', false); // Set true jika aplikasi di belakang proxy
 
 // Rate limiters
 const basicLimiter = rateLimit({
     windowMs: 24 * 60 * 60 * 1000,
     max: 5,
     message: "Basic API key limit reached. Please try again after 24 hours.",
-    statusCode: 429 // Status code untuk limit tercapai
+    statusCode: 429
 });
 
 const proLimiter = rateLimit({
     windowMs: 24 * 60 * 60 * 1000,
     max: 3000,
     message: "PRO API key limit reached. Please try again after 24 hours.",
-    statusCode: 429 // Status code untuk limit tercapai
+    statusCode: 429
 });
 
 // Routes
@@ -49,41 +46,46 @@ app.get("/", (req, res) => {
     res.json("invalid endpoints");
 });
 
+// Validasi URL
+function isValidUrl(string) {
+    try {
+        new URL(string);
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
 // Delta route
 app.get("/delta", async (req, res) => {
     const url = req.query.url;
     const apiKey = req.query.apikey;
 
-    if (!url) {
-        return res.status(400).json("need parameter url");
+    if (!url || !isValidUrl(url)) {
+        return res.status(400).json("Invalid URL provided");
     }
 
     if (!apiKey) {
-        return res.status(400).json("need parameter apikey");
+        return res.status(400).json("Need parameter apikey");
     }
 
-    // Cari API key di SQLite
-    const apiKeyDoc = await ApiKey.findOne({ where: { key: apiKey } });
-    if (!apiKeyDoc) {
-        return res.status(401).json("invalid API key");
-    }
+    try {
+        const apiKeyDoc = await ApiKey.findOne({ where: { key: apiKey } });
+        if (!apiKeyDoc) {
+            return res.status(401).json("Invalid API key");
+        }
 
-    if (apiKeyDoc.type === "basic") {
-        return basicLimiter(req, res, async () => {
+        const limiter = apiKeyDoc.type === "basic" ? basicLimiter : proLimiter;
+
+        return limiter(req, res, async () => {
             const data = await mkbas(url);
             apiKeyDoc.requestCount++;
             await apiKeyDoc.save();
             return res.status(200).json({ data, requests: apiKeyDoc.requestCount });
         });
-    } else if (apiKeyDoc.type === "pro") {
-        return proLimiter(req, res, async () => {
-            const data = await mkbas(url);
-            apiKeyDoc.requestCount++;
-            await apiKeyDoc.save();
-            return res.status(200).json({ data, requests: apiKeyDoc.requestCount });
-        });
-    } else {
-        return res.status(401).json("invalid API key");
+    } catch (error) {
+        console.error("Error processing request:", error);
+        return res.status(500).json({ message: "Internal server error" });
     }
 });
 
@@ -101,9 +103,13 @@ app.get("/gen-key", async (req, res) => {
         return res.status(400).json("Invalid type. Use 'basic' or 'pro'.");
     }
 
-    // Simpan API key baru di SQLite
-    const newApiKey = await ApiKey.create({ key: apiKey, type });
-    return res.status(201).json({ apiKey: newApiKey.key });
+    try {
+        const newApiKey = await ApiKey.create({ key: apiKey, type });
+        return res.status(201).json({ apiKey: newApiKey.key });
+    } catch (error) {
+        console.error("Error generating API key:", error);
+        return res.status(500).json({ message: "Internal server error" });
+    }
 });
 
 // Remove API key
@@ -111,15 +117,19 @@ app.delete("/remove-key", async (req, res) => {
     const apiKey = req.query.apikey;
 
     if (!apiKey) {
-        return res.status(400).json("need parameter apikey");
+        return res.status(400).json("Need parameter apikey");
     }
 
-    // Hapus API key dari SQLite
-    const result = await ApiKey.destroy({ where: { key: apiKey } });
-    if (result) {
-        return res.status(200).json({ message: `API key ${apiKey} removed.` });
-    } else {
-        return res.status(404).json("invalid API key");
+    try {
+        const result = await ApiKey.destroy({ where: { key: apiKey } });
+        if (result) {
+            return res.status(200).json({ message: `API key ${apiKey} removed.` });
+        } else {
+            return res.status(404).json("Invalid API key");
+        }
+    } catch (error) {
+        console.error("Error removing API key:", error);
+        return res.status(500).json({ message: "Internal server error" });
     }
 });
 
