@@ -11,6 +11,9 @@ const sequelize = new Sequelize({
     storage: process.env.DB_PATH || 'database.sqlite' // Nama file untuk menyimpan database
 });
 
+// Atur trust proxy
+app.set('trust proxy', true);
+
 // Definisikan model API Key menggunakan Sequelize
 const ApiKey = sequelize.define('ApiKey', {
     key: { type: DataTypes.STRING, allowNull: false, unique: true }, // Pastikan key unik
