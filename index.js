@@ -21,7 +21,7 @@ const apiKeySchema = new mongoose.Schema({
 const ApiKey = mongoose.model('ApiKey', apiKeySchema);
 
 // Atur trust proxy
-app.set('trust proxy', true);
+app.set('trust proxy', false);
 
 // Rate limiters
 const basicLimiter = rateLimit({
