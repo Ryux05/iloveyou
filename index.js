@@ -11,8 +11,8 @@ const sequelize = new Sequelize({
     storage: process.env.DB_PATH || 'database.sqlite' // Nama file untuk menyimpan database
 });
 
-// Atur trust proxy
-app.set('trust proxy', true);
+
+
 
 // Definisikan model API Key menggunakan Sequelize
 const ApiKey = sequelize.define('ApiKey', {
@@ -25,6 +25,9 @@ const ApiKey = sequelize.define('ApiKey', {
 sequelize.sync()
     .then(() => console.log("SQLite connected and synced"))
     .catch(err => console.error("SQLite connection error:", err));
+
+// Atur trust proxy
+app.set('trust proxy', true);
 
 // Rate limiters
 const basicLimiter = rateLimit({
