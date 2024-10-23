@@ -6,7 +6,7 @@ const app = express();
 const port = 8080;
 
 // MongoDB connection string
-const mongoDB = "mongodb+srv://myuko:loveyou@key.itkat.mongodb.net/";
+const mongoDB = "mongodb+srv://myuko:loveyou@key.itkat.mongodb.net/?retryWrites=true&w=majority&appName=key";
 mongoose.connect(mongoDB, { useNewUrlParser: true, useUnifiedTopology: true })
     .then(() => console.log("MongoDB connected"))
     .catch(err => console.error("MongoDB connection error:", err));
