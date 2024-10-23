@@ -1,20 +1,20 @@
-# Gunakan image Node.js resmi sebagai base image
+# Menggunakan image Node.js resmi
 FROM node:18
 
-# Atur direktori kerja di dalam container
-WORKDIR /index
+# Mengatur direktori kerja
+WORKDIR /usr/src/app
 
-# Salin package.json dan package-lock.json ke dalam container
+# Menyalin package.json dan package-lock.json
 COPY package*.json ./
 
-# Install dependensi
+# Menginstal dependensi
 RUN npm install
 
-# Salin semua file dari proyek ke dalam container
+# Menyalin semua file dari proyek ke dalam container
 COPY . .
 
-# Expose port aplikasi
-EXPOSE 8080
-
-# Jalankan aplikasi
+# Menjalankan aplikasi
 CMD ["node", "index.js"]
+
+# Mengatur port yang akan digunakan
+EXPOSE 8080
