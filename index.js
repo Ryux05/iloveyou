@@ -32,7 +32,7 @@ const basicLimiter = rateLimit({
 
 const proLimiter = rateLimit({
     windowMs: 24 * 60 * 60 * 1000,
-    max: 5000,
+    max: 3000,
     message: "PRO API key limit reached. Please try again after 24 hours."
 });
 
