@@ -1,30 +1,27 @@
 const express = require("express");
-const { Sequelize, DataTypes } = require("sequelize");
+const mongoose = require("mongoose");
 const rateLimit = require("express-rate-limit");
-const mkbas = require("./mkbas"); // Fungsi untuk menangani permintaan
+const mkbas = require("./mkbas"); // Mengasumsikan mkbas adalah fungsi Anda untuk menangani permintaan
 const app = express();
 const port = 8080;
 
-// Koneksi ke SQLite database
-const sequelize = new Sequelize({
-    dialect: 'sqlite',
-    storage: process.env.DB_PATH || './data/database.sqlite' // Nama file untuk menyimpan database
-});
+// Koneksi ke MongoDB
+const mongoURI = process.env.MONGO_URI || 'mongodb+srv://myuko:loveyou@key.itkat.mongodb.net/key?retryWrites=true&w=majority';
+mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
+    .then(() => console.log("MongoDB connected"))
+    .catch(err => console.error("MongoDB connection error:", err));
 
-// Definisikan model API Key menggunakan Sequelize
-const ApiKey = sequelize.define('ApiKey', {
-    key: { type: DataTypes.STRING, allowNull: false, unique: true },
-    type: { type: DataTypes.ENUM('basic', 'pro'), allowNull: false },
-    requestCount: { type: DataTypes.INTEGER, defaultValue: 0 },
-});
+// Definisikan model API Key menggunakan Mongoose
+const apiKeySchema = new mongoose.Schema({
+    key: { type: String, required: true, unique: true },
+    type: { type: String, enum: ['basic', 'pro'], required: true },
+    requestCount: { type: Number, default: 0 },
+}, { timestamps: true });
 
-// Sinkronisasi model dengan database
-sequelize.sync({ alter: true })
-    .then(() => console.log("SQLite connected and synced"))
-    .catch(err => console.error("SQLite connection error:", err));
+const ApiKey = mongoose.model('ApiKey', apiKeySchema);
 
 // Atur trust proxy
-app.set('trust proxy', false); // Set true jika aplikasi di belakang proxy
+app.set('trust proxy', true);
 
 // Rate limiters
 const basicLimiter = rateLimit({
@@ -46,46 +43,41 @@ app.get("/", (req, res) => {
     res.json("invalid endpoints");
 });
 
-// Validasi URL
-function isValidUrl(string) {
-    try {
-        new URL(string);
-        return true;
-    } catch (_) {
-        return false;
-    }
-}
-
 // Delta route
 app.get("/delta", async (req, res) => {
     const url = req.query.url;
     const apiKey = req.query.apikey;
 
-    if (!url || !isValidUrl(url)) {
-        return res.status(400).json("Invalid URL provided");
+    if (!url) {
+        return res.status(400).json("need parameter url");
     }
 
     if (!apiKey) {
-        return res.status(400).json("Need parameter apikey");
+        return res.status(400).json("need parameter apikey");
     }
 
-    try {
-        const apiKeyDoc = await ApiKey.findOne({ where: { key: apiKey } });
-        if (!apiKeyDoc) {
-            return res.status(401).json("Invalid API key");
-        }
+    // Cari API key di MongoDB
+    const apiKeyDoc = await ApiKey.findOne({ key: apiKey });
+    if (!apiKeyDoc) {
+        return res.status(401).json("invalid API key");
+    }
 
-        const limiter = apiKeyDoc.type === "basic" ? basicLimiter : proLimiter;
-
-        return limiter(req, res, async () => {
+    if (apiKeyDoc.type === "basic") {
+        return basicLimiter(req, res, async () => {
             const data = await mkbas(url);
             apiKeyDoc.requestCount++;
             await apiKeyDoc.save();
             return res.status(200).json({ data, requests: apiKeyDoc.requestCount });
         });
-    } catch (error) {
-        console.error("Error processing request:", error);
-        return res.status(500).json({ message: "Internal server error" });
+    } else if (apiKeyDoc.type === "pro") {
+        return proLimiter(req, res, async () => {
+            const data = await mkbas(url);
+            apiKeyDoc.requestCount++;
+            await apiKeyDoc.save();
+            return res.status(200).json({ data, requests: apiKeyDoc.requestCount });
+        });
+    } else {
+        return res.status(401).json("invalid API key");
     }
 });
 
@@ -103,13 +95,9 @@ app.get("/gen-key", async (req, res) => {
         return res.status(400).json("Invalid type. Use 'basic' or 'pro'.");
     }
 
-    try {
-        const newApiKey = await ApiKey.create({ key: apiKey, type });
-        return res.status(201).json({ apiKey: newApiKey.key });
-    } catch (error) {
-        console.error("Error generating API key:", error);
-        return res.status(500).json({ message: "Internal server error" });
-    }
+    // Simpan API key baru di MongoDB
+    const newApiKey = await ApiKey.create({ key: apiKey, type });
+    return res.status(201).json({ apiKey: newApiKey.key });
 });
 
 // Remove API key
@@ -117,27 +105,23 @@ app.delete("/remove-key", async (req, res) => {
     const apiKey = req.query.apikey;
 
     if (!apiKey) {
-        return res.status(400).json("Need parameter apikey");
+        return res.status(400).json("need parameter apikey");
     }
 
-    try {
-        const result = await ApiKey.destroy({ where: { key: apiKey } });
-        if (result) {
-            return res.status(200).json({ message: `API key ${apiKey} removed.` });
-        } else {
-            return res.status(404).json("Invalid API key");
-        }
-    } catch (error) {
-        console.error("Error removing API key:", error);
-        return res.status(500).json({ message: "Internal server error" });
+    // Hapus API key dari MongoDB
+    const result = await ApiKey.deleteOne({ key: apiKey });
+    if (result.deletedCount > 0) {
+        return res.status(200).json({ message: `API key ${apiKey} removed.` });
+    } else {
+        return res.status(404).json("invalid API key");
     }
 });
 
 // List all API keys by type
 app.get("/list-keys", async (req, res) => {
     try {
-        const basicKeys = await ApiKey.findAll({ where: { type: "basic" } });
-        const proKeys = await ApiKey.findAll({ where: { type: "pro" } });
+        const basicKeys = await ApiKey.find({ type: "basic" });
+        const proKeys = await ApiKey.find({ type: "pro" });
 
         return res.status(200).json({
             basic: basicKeys,
