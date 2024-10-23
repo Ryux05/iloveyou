@@ -4,8 +4,10 @@ const mkbas = require("./mkbas"); // Mengasumsikan mkbas adalah fungsi untuk men
 const app = express();
 const port = 8080;
 
+// Ganti <username>, <password>, dan <cluster-address> dengan informasi yang sesuai
+const mongoUrl = "mongodb+srv://myuko:loveyou@key.itkat.mongodb.net/key?retryWrites=true&w=majority"; 
+
 // Koneksi ke MongoDB
-const mongoUrl = "mongodb+srv://myuko:<db_password>@key.itkat.mongodb.net/key"; // Ganti <db_password> dengan password MongoDB Anda
 mongoose.connect(mongoUrl, {
     useNewUrlParser: true,
     useUnifiedTopology: true
@@ -43,7 +45,7 @@ app.use((req, res, next) => {
     const currentTime = Date.now();
     const timeSinceLastRequest = currentTime - requestCounts[apiKey].lastRequest;
 
-    // Reset count every 24 hours
+    // Reset count setiap 24 jam
     if (timeSinceLastRequest > 24 * 60 * 60 * 1000) {
         requestCounts[apiKey].count = 0;
     }
