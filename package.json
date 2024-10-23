@@ -1,5 +1,5 @@
 {
-  "name": "iloveyou",
+  "name": "bypass-delta-fast",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -12,6 +12,8 @@
   "dependencies": {
     "express": "^4.21.1",
     "express-rate-limit": "^7.4.1",
-    "mongoose": "^8.7.2"
+    "mongoose": "^8.7.2",
+    "sequelize": "^6.37.4",
+    "sqlite3": "^5.1.7"
   }
 }
