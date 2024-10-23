@@ -19,7 +19,7 @@ const ApiKey = sequelize.define('ApiKey', {
 });
 
 // Sinkronisasi model dengan database
-sequelize.sync()
+sequelize.sync({ alter: true })
     .then(() => console.log("SQLite connected and synced"))
     .catch(err => console.error("SQLite connection error:", err));
 
