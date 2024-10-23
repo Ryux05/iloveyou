@@ -8,7 +8,7 @@ const port = 8080;
 // Koneksi ke SQLite database
 const sequelize = new Sequelize({
     dialect: 'sqlite',
-    storage: process.env.DB_PATH || 'database.sqlite' // Nama file untuk menyimpan database
+    storage: process.env.DB_PATH || './data/database.sqlite' // Nama file untuk menyimpan database
 });
 
 
