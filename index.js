@@ -1,42 +1,48 @@
 const express = require("express");
-const mongoose = require("mongoose");
-const rateLimit = require("express-rate-limit");
 const mkbas = require("./mkbas"); // Mengasumsikan mkbas adalah fungsi Anda untuk menangani permintaan
 const app = express();
 const port = 8080;
 
 // Koneksi ke MongoDB
-const mongoURI = process.env.MONGO_URI || 'mongodb+srv://myuko:loveyou@key.itkat.mongodb.net/key?retryWrites=true&w=majority';
-mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log("MongoDB connected"))
+const { MongoClient } = require("mongodb");
+const mongoUrl = "mongodb+srv://myuko:<db_password>@key.itkat.mongodb.net/key";
+const client = new MongoClient(mongoUrl, { useNewUrlParser: true, useUnifiedTopology: true });
+let db;
+
+client.connect()
+    .then(() => {
+        console.log("MongoDB connected");
+        db = client.db("key");
+    })
     .catch(err => console.error("MongoDB connection error:", err));
 
-// Definisikan model API Key menggunakan Mongoose
-const apiKeySchema = new mongoose.Schema({
-    key: { type: String, required: true, unique: true },
-    type: { type: String, enum: ['basic', 'pro'], required: true },
-    requestCount: { type: Number, default: 0 },
-}, { timestamps: true });
+// Definisikan objek untuk menyimpan jumlah permintaan
+const rateLimits = {
+    basic: {},
+    pro: {}
+};
 
-const ApiKey = mongoose.model('ApiKey', apiKeySchema);
+// Fungsi untuk memeriksa dan memperbarui jumlah permintaan
+const checkRateLimit = (key, type) => {
+    const currentTime = Date.now();
+    const timeWindow = 24 * 60 * 60 * 1000; // 24 jam
+    const limit = type === "basic" ? 5 : 3000;
 
-// Atur trust proxy
-app.set('trust proxy', false);
-
-// Rate limiters
-const basicLimiter = rateLimit({
-    windowMs: 24 * 60 * 60 * 1000,
-    max: 5,
-    message: "Basic API key limit reached. Please try again after 24 hours.",
-    statusCode: 429
-});
-
-const proLimiter = rateLimit({
-    windowMs: 24 * 60 * 60 * 1000,
-    max: 3000,
-    message: "PRO API key limit reached. Please try again after 24 hours.",
-    statusCode: 429
-});
+    if (!rateLimits[type][key]) {
+        rateLimits[type][key] = { count: 1, timestamp: currentTime };
+    } else {
+        if (currentTime - rateLimits[type][key].timestamp < timeWindow) {
+            if (rateLimits[type][key].count >= limit) {
+                return false; // Limit tercapai
+            }
+            rateLimits[type][key].count++;
+        } else {
+            // Reset count jika sudah melewati time window
+            rateLimits[type][key] = { count: 1, timestamp: currentTime };
+        }
+    }
+    return true; // Masih dalam batas
+};
 
 // Routes
 app.get("/", (req, res) => {
@@ -57,28 +63,18 @@ app.get("/delta", async (req, res) => {
     }
 
     // Cari API key di MongoDB
-    const apiKeyDoc = await ApiKey.findOne({ key: apiKey });
+    const apiKeyDoc = await db.collection("ApiKeys").findOne({ key: apiKey });
     if (!apiKeyDoc) {
         return res.status(401).json("invalid API key");
     }
 
-    if (apiKeyDoc.type === "basic") {
-        return basicLimiter(req, res, async () => {
-            const data = await mkbas(url);
-            apiKeyDoc.requestCount++;
-            await apiKeyDoc.save();
-            return res.status(200).json({ data, requests: apiKeyDoc.requestCount });
-        });
-    } else if (apiKeyDoc.type === "pro") {
-        return proLimiter(req, res, async () => {
-            const data = await mkbas(url);
-            apiKeyDoc.requestCount++;
-            await apiKeyDoc.save();
-            return res.status(200).json({ data, requests: apiKeyDoc.requestCount });
-        });
-    } else {
-        return res.status(401).json("invalid API key");
+    const isAllowed = checkRateLimit(apiKey, apiKeyDoc.type);
+    if (!isAllowed) {
+        return res.status(429).json(`${apiKeyDoc.type.toUpperCase()} API key limit reached. Please try again after 24 hours.`);
     }
+
+    const data = await mkbas(url);
+    return res.status(200).json({ data, requests: rateLimits[apiKeyDoc.type][apiKey].count });
 });
 
 // Generate API key
@@ -96,8 +92,8 @@ app.get("/gen-key", async (req, res) => {
     }
 
     // Simpan API key baru di MongoDB
-    const newApiKey = await ApiKey.create({ key: apiKey, type });
-    return res.status(201).json({ apiKey: newApiKey.key });
+    await db.collection("ApiKeys").insertOne({ key: apiKey, type });
+    return res.status(201).json({ apiKey });
 });
 
 // Remove API key
@@ -109,7 +105,7 @@ app.delete("/remove-key", async (req, res) => {
     }
 
     // Hapus API key dari MongoDB
-    const result = await ApiKey.deleteOne({ key: apiKey });
+    const result = await db.collection("ApiKeys").deleteOne({ key: apiKey });
     if (result.deletedCount > 0) {
         return res.status(200).json({ message: `API key ${apiKey} removed.` });
     } else {
@@ -120,8 +116,8 @@ app.delete("/remove-key", async (req, res) => {
 // List all API keys by type
 app.get("/list-keys", async (req, res) => {
     try {
-        const basicKeys = await ApiKey.find({ type: "basic" });
-        const proKeys = await ApiKey.find({ type: "pro" });
+        const basicKeys = await db.collection("ApiKeys").find({ type: "basic" }).toArray();
+        const proKeys = await db.collection("ApiKeys").find({ type: "pro" }).toArray();
 
         return res.status(200).json({
             basic: basicKeys,
